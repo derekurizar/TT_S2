@@ -1,0 +1,46 @@
+name: Web App Deploy Dev
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+jobs:
+  build-deploy:
+    strategy:
+      matrix:
+        node-version: [14.x]
+
+    name: Build and Deploy Dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ secrets.AWS_REGION_DEV }}
+
+      - name: Copy files to branch folder
+        if: github.event_name == 'pull_request'
+        run: aws s3 sync ./src/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/${{github.head_ref}} --delete\
+
+      - name: Get name of the merged branch
+        if: github.event_name != 'pull_request'
+        uses: tonynguyenit18/github-action-custom-vars@v1
+
+      - name: Delete folder of the merged branch
+        if: github.event_name != 'pull_request'
+        run: aws s3 rm s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/$RECENT_MERGED_BRANCH_NAME  --recursive
+
+      - name: Copy files to root folder
+        if: github.event_name != 'pull_request'
+        run: aws s3 sync ./helpers/ s3://${{ secrets.AWS_PRIMARY_S3_BUCKET_DEV }}/error --delete
+
+      - name: Invalidate Cloudfront CDN
+        run: aws cloudfront create-invalidation --distribution-id=${{secrets.CLOUDFRONT_DISTRIBUTION_ID_DEV}} --paths '/*'
